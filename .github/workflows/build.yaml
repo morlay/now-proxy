@@ -24,7 +24,7 @@ jobs:
       - id: prepare
         name: prepare
         run: |-
-          if [[ ${{ github.ref }} != "refs/heads/master" ]]; then
+          if [[ ${{ github.ref }} != "refs/heads/main" ]]; then
             export TAG=temp-${{ github.sha }}
           fi
           make prepare
@@ -33,7 +33,7 @@ jobs:
         with:
           build-args: ${{ steps.prepare.outputs.build_args }}
           context: .
-          file: Dockerfile
+          file: cmd/now-proxy/Dockerfile
           labels: |-
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
