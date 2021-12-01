@@ -39,6 +39,8 @@ func TestProxy(t *testing.T) {
 	t.Run("PROXY GET", func(t *testing.T) {
 		r, _ := http.NewRequest("GET", "http://0.0.0.0:8700/http://0.0.0.0:8701/a/b", nil)
 		r.Header.Add("X-Proxy-Forward-Origin", "github.com")
+		r.Header.Add("X-Proxy-Forward-X-Requested-With", "github.com")
+		r.Header.Add("X-Requested-With", "github1.com")
 		resp, _ := http.DefaultClient.Do(r)
 		data, _ := httputil.DumpResponse(resp, true)
 		fmt.Println(string(data))

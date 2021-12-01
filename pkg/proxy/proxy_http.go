@@ -100,12 +100,18 @@ func processRequest(r *http.Request) (*http.Request, error) {
 		return nil, err
 	}
 
+	deferHeaders := http.Header{}
+
 	for k, vv := range r.Header {
 		if strings.HasPrefix(k, ForwardPrefix) {
-			req.Header[k[len(ForwardPrefix):]] = vv
+			deferHeaders[k[len(ForwardPrefix):]] = vv
 		} else {
 			req.Header[k] = vv
 		}
+	}
+
+	for k, vv := range deferHeaders {
+		req.Header[k] = vv
 	}
 
 	req.Header.Set("Host", r.Host)
