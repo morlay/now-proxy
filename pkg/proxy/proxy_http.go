@@ -66,8 +66,10 @@ func getShortConnClient(timeout time.Duration) *http.Client {
 			Timeout:   timeout,
 			KeepAlive: 0,
 		}).DialContext,
+		Proxy:             http.ProxyFromEnvironment,
 		DisableKeepAlives: true,
 	}
+
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: t,
