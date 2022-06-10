@@ -101,7 +101,7 @@ dagger.#Plan & {
 			}
 		}
 
-		push: docker.#Push & {
+		ship: docker.#Push & {
 			"dest": "ghcr.io/morlay/now-proxy:\(_tag)"
 			"images": {
 				for p, i in images {
