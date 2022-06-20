@@ -2,7 +2,7 @@ module: "github.com/morlay/now-proxy"
 
 require: {
 	"dagger.io":                      "v0.3.0"
-	"github.com/innoai-tech/runtime": "v0.0.0-20220613025431-4b3df16551f1"
+	"github.com/innoai-tech/runtime": "v0.0.0-20220620073900-e53d36c75e32"
 	"k8s.io/api":                     "v0.24.1"
 	"universe.dagger.io":             "v0.3.0"
 }

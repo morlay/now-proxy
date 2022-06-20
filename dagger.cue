@@ -1,114 +1,95 @@
 package main
 
 import (
+	"strings"
 	"dagger.io/dagger"
-	"dagger.io/dagger/core"
-	"universe.dagger.io/docker"
 
-	"github.com/innoai-tech/runtime/cuepkg/debian"
-	"github.com/innoai-tech/runtime/cuepkg/golang"
 	"github.com/innoai-tech/runtime/cuepkg/tool"
+	"github.com/innoai-tech/runtime/cuepkg/golang"
 )
 
-dagger.#Plan & {
-	client: {
-		env: {
-			VERSION: string | *"dev"
+dagger.#Plan
 
-			GIT_SHA: string | *""
-			GIT_REF: string | *""
+client: env: {
+	VERSION: string | *"dev"
+	GIT_SHA: string | *""
+	GIT_REF: string | *""
 
-			GOPROXY:   string | *""
-			GOPRIVATE: string | *""
-			GOSUMDB:   string | *""
+	GOPROXY:   string | *""
+	GOPRIVATE: string | *""
+	GOSUMDB:   string | *""
 
-			GH_USERNAME: string | *""
-			GH_PASSWORD: dagger.#Secret
+	GH_USERNAME: string | *""
+	GH_PASSWORD: dagger.#Secret
 
-			LINUX_MIRROR: string | *""
+	CONTAINER_REGISTRY_PULL_PROXY: string | *""
+	LINUX_MIRROR:                  string | *""
+}
+
+client: filesystem: {
+	"build/output": write: contents: actions.go.archive.output
+}
+
+actions: version: tool.#ResolveVersion & {
+	"ref":     "\(client.env.GIT_REF)"
+	"version": "\(client.env.VERSION)"
+}
+
+mirror: {
+	linux: "\(client.env.LINUX_MIRROR)"
+	pull:  "\(client.env.CONTAINER_REGISTRY_PULL_PROXY)"
+}
+
+actions: go: golang.#Project & {
+	source: {
+		path: "."
+		include: [
+			"cmd/",
+			"pkg/",
+			"go.mod",
+			"go.sum",
+		]
+	}
+
+	version:  "\(actions.version.output)"
+	revision: "\(client.env.GIT_SHA)"
+
+	goos: ["linux"]
+	goarch: ["amd64", "arm64"]
+	main: "./cmd/now-proxy"
+	ldflags: [
+		"-s -w",
+		"-X \(go.module)/pkg/version.Version=\(go.version)",
+		"-X \(go.module)/pkg/version.Revision=\(go.revision)",
+	]
+
+	env: {
+		GOPROXY:   client.env.GOPROXY
+		GOPRIVATE: client.env.GOPRIVATE
+		GOSUMDB:   client.env.GOSUMDB
+	}
+
+	build: {
+		image: {
+			"mirror": mirror
 		}
 	}
 
-	actions: {
-		_source: core.#Source & {
-			path: "."
-			include: [
-				"cmd/",
-				"pkg/",
-				"go.mod",
-				"go.sum",
-			]
+	ship: {
+		name: "\(strings.Replace(actions.go.module, "github.com/", "ghcr.io/", -1))"
+		tag:  "\(actions.version.output)"
+
+		image: {
+			source:   "gcr.io/distroless/static-debian11:debug"
+			"mirror": mirror
 		}
 
-		_version: (tool.#ResolveVersion & {ref: client.env.GIT_REF, version: "\(client.env.VERSION)"}).output
-
-		_tag: _version
-
-		_archs: ["amd64", "arm64"]
-
-		info: golang.#Info & {
-			source: _source.output
+		config: env: {
+			PORT: "80"
 		}
 
-		build: golang.#Build & {
-			source: _source.output
-			image: mirror: client.env.LINUX_MIRROR
-			go: {
-				os: ["linux"]
-				arch:    _archs
-				package: "./cmd/now-proxy"
-				ldflags: [
-					"-s -w",
-					"-X \(info.module)/pkg/version.Version=\(_version)",
-					"-X \(info.module)/pkg/version.Revision=\(client.env.GIT_SHA)",
-				]
-			}
-			run: env: {
-				GOPROXY:   client.env.GOPROXY
-				GOPRIVATE: client.env.GOPRIVATE
-				GOSUMDB:   client.env.GOSUMDB
-			}
-		}
-
-		images: {
-			for _arch in _archs {
-				"linux/\(_arch)": docker.#Build & {
-					steps: [
-						debian.#Build & {
-							mirror: client.env.LINUX_MIRROR
-							packages: {
-								"ca-certificates": _
-							}
-						},
-						docker.#Copy & {
-							contents: build["linux/\(_arch)"].output
-							dest:     "/\(build.go.name)"
-							source:   "./\(build.go.name)"
-						},
-						docker.#Set & {
-							config: {
-								label: {
-									"org.opencontainers.image.source":   "https://\(info.module)"
-									"org.opencontainers.image.revision": "\(client.env.GIT_SHA)"
-								}
-								workdir: "/"
-								env: PORT: "80"
-								entrypoint: ["/\(build.go.name)"]
-							}
-						},
-					]
-				}
-			}
-		}
-
-		ship: docker.#Push & {
-			"dest": "ghcr.io/morlay/now-proxy:\(_tag)"
-			"images": {
-				for p, i in images {
-					"\(p)": i.output
-				}
-			}
-			"auth": {
+		push: {
+			auth: {
 				username: client.env.GH_USERNAME
 				secret:   client.env.GH_PASSWORD
 			}
