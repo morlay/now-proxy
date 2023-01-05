@@ -46,6 +46,13 @@ func TestProxy(t *testing.T) {
 		fmt.Println(string(data))
 	})
 
+	t.Run("PROXY GET DATAURI", func(t *testing.T) {
+		r, _ := http.NewRequest("GET", "http://0.0.0.0:8700/data:text/vnd-example+xyz;foo=bar;base64,R0lGODdh", nil)
+		resp, _ := http.DefaultClient.Do(r)
+		data, _ := httputil.DumpResponse(resp, true)
+		fmt.Println(string(data))
+	})
+
 	t.Run("PROXY POST", func(t *testing.T) {
 		r, _ := http.NewRequest("POST", "http://0.0.0.0:8700/http://0.0.0.0:8701/a/b", bytes.NewBufferString("{}"))
 		r.Header.Add("X-Proxy-Forward-Origin", "github.com")

@@ -8,9 +8,25 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/vincent-petithory/dataurl"
 )
 
 func (p *Proxy) HandleHttp(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.RequestURI, "/data:") {
+		dataURL, err := dataurl.DecodeString(r.RequestURI[1:])
+		if err != nil {
+			p.writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+
+		w.Header().Set("Content-Type", dataURL.MediaType.String())
+		w.WriteHeader(200)
+		_, _ = w.Write(dataURL.Data)
+
+		return
+	}
+
 	req, err := processRequest(r)
 	if err != nil {
 		p.writeErr(w, http.StatusBadRequest, err)
