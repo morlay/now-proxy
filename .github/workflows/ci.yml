@@ -14,12 +14,9 @@ jobs:
       - uses: actions/checkout@v3
       - uses: docker/setup-qemu-action@v2
 
-      - run: curl -sSLf https://raw.githubusercontent.com/octohelm/dagger/main/install.sh | sudo sh
+      - run: curl -sSLf https://raw.githubusercontent.com/octohelm/wagon/main/install.sh | sudo sh
 
-      - run: dagger do go ship push
+      - run: make ship
         env:
-          DAGGER_LOG_FORMAT: plain
           GH_USERNAME: ${{ github.actor }}
           GH_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-          GIT_SHA: ${{ github.sha }}
-          GIT_REF: ${{ github.ref }}

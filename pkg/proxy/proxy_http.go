@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/vincent-petithory/dataurl"
 )
+
+const MaxResponseContentLength = 4 * MiB
 
 func (p *Proxy) HandleHttp(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.RequestURI, "/data:") {
@@ -32,6 +35,16 @@ func (p *Proxy) HandleHttp(w http.ResponseWriter, r *http.Request) {
 		p.writeErr(w, http.StatusBadRequest, err)
 		return
 	}
+
+	rr, err := ParseRange(r.Header.Get("Range"), MaxResponseContentLength)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if rr != nil {
+		req.Header.Set("Range", rr.RangeString())
+	}
+
 	p.replyFrom(w, req)
 }
 
@@ -50,15 +63,12 @@ func (p *Proxy) replyFrom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := getShortConnClient(10 * time.Second)
-
-	resp, err := c.Do(r)
-
+	client := createClient(10 * time.Second)
+	resp, err := client.Do(r)
 	if err != nil {
 		p.writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
-
 	defer resp.Body.Close()
 
 	for k, vv := range resp.Header {
@@ -70,13 +80,29 @@ func (p *Proxy) replyFrom(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Headers", "*")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
+	if r.Method == http.MethodGet && resp.StatusCode != http.StatusPartialContent && resp.ContentLength > MaxResponseContentLength {
+		w.Header().Set("Content-Range", (&Range{
+			Start:  0,
+			Length: MaxResponseContentLength,
+		}).ContentRange(resp.ContentLength))
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", MaxResponseContentLength))
+		w.WriteHeader(http.StatusPartialContent)
+
+		if _, err := io.Copy(w, io.LimitReader(resp.Body, MaxResponseContentLength)); err != nil {
+			fmt.Println(err)
+		}
+		return
+	}
+
 	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		p.writeErr(w, http.StatusInternalServerError, err)
+	if resp.StatusCode != http.StatusNoContent {
+		if _, err := io.Copy(w, resp.Body); err != nil {
+			fmt.Println(err)
+		}
 	}
 }
 
-func getShortConnClient(timeout time.Duration) *http.Client {
+func createClient(timeout time.Duration) *http.Client {
 	t := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   timeout,
