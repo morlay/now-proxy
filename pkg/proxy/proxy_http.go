@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"regexp"
 	"strings"
@@ -80,6 +81,9 @@ func (p *Proxy) replyFrom(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Headers", "*")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
+	// force no-cache
+	w.Header().Set("Cache-Control", "no-cache")
+
 	if r.Method == http.MethodGet && resp.StatusCode != http.StatusPartialContent && resp.ContentLength > MaxResponseContentLength {
 		w.Header().Set("Content-Range", (&Range{
 			Start:  0,
@@ -119,6 +123,7 @@ func createClient(timeout time.Duration) *http.Client {
 }
 
 const ForwardPrefix = "X-Proxy-Forward-"
+const HeaderInQuery = "X-Param-Header-"
 
 func processRequest(r *http.Request) (*http.Request, error) {
 	if r.Header.Get("Proxy-Connection") != "" {
@@ -153,6 +158,17 @@ func processRequest(r *http.Request) (*http.Request, error) {
 			req.Header[k] = vv
 		}
 	}
+
+	query := req.URL.Query()
+
+	for k := range query {
+		if strings.HasPrefix(textproto.CanonicalMIMEHeaderKey(k), HeaderInQuery) {
+			req.Header[textproto.CanonicalMIMEHeaderKey(k[len(HeaderInQuery):])] = query[k]
+			query.Del(HeaderInQuery)
+		}
+	}
+
+	r.URL.RawQuery = query.Encode()
 
 	for k, vv := range deferHeaders {
 		req.Header[k] = vv

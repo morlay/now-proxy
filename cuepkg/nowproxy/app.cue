@@ -35,10 +35,6 @@ import (
 			}
 			ports: http: 80
 			env: PORT:   "80"
-			readinessProbe: kubepkg.#Probe & {
-				httpGet: {path: "/http:/www.gstatic.com/generate_204", port: ports.http}
-			}
-			livenessProbe: readinessProbe
 		}
 	}
 }
