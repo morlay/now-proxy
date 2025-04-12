@@ -1,8 +1,10 @@
 package proxy
 
 import (
+	"cmp"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/textproto"
@@ -37,40 +39,59 @@ func (p *Proxy) HandleHttp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rr, err := ParseRange(r.Header.Get("Range"), MaxResponseContentLength)
+	rng, err := ParseRange(r.Header.Get("Range"), MaxResponseContentLength)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if rr != nil {
-		req.Header.Set("Range", rr.RangeString())
-	}
-
-	p.replyFrom(w, req)
+	p.replyFrom(w, req, rng)
 }
 
-func (p *Proxy) replyFrom(w http.ResponseWriter, r *http.Request) {
+func (p *Proxy) replyFrom(w http.ResponseWriter, r *http.Request, rng *Range) {
 	if r.Method == http.MethodOptions {
 		header := w.Header()
 
-		header.Set("access-control-allow-method", r.Header.Get("access-control-request-method"))
-		header.Set("access-control-allow-headers", r.Header.Get("access-control-request-headers"))
-		header.Set("access-control-allow-credentials", "true")
-		header.Set("access-control-allow-origin", "*")
-		header.Set("access-control-max-age", "3600")
+		header.Set("Access-Control-Allow-Method", r.Header.Get("Access-Control-Allow-Method"))
+		header.Set("Access-Control-Allow-Headers", r.Header.Get("Access-Control-Allow-Headers"))
+		header.Set("Access-Control-Allow-Credentials", "true")
+		header.Set("Access-Control-Allow-Origin", "*")
+		header.Set("Access-Control-Max-Age", "3600")
 
 		w.WriteHeader(http.StatusNoContent)
 		_, _ = w.Write(nil)
 		return
 	}
 
+	l := slog.Default().With(
+		slog.String("http.request.method", r.Method),
+	)
+	for k := range r.Header {
+		if strings.HasPrefix(k, "Range") || strings.HasPrefix(k, "Content-") {
+			l = l.With(slog.String("http.request.header."+k, r.Header.Get(k)))
+		}
+	}
+
+	if rng != nil {
+		r.Header.Set("Range", rng.RangeString())
+	}
+
 	client := createClient(10 * time.Second)
 	resp, err := client.Do(r)
 	if err != nil {
+		l.Error(err.Error())
 		p.writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	defer resp.Body.Close()
+
+	l = l.With(slog.Int("http.response.status", resp.StatusCode))
+	for k := range resp.Header {
+		if strings.HasPrefix(k, "Range") || strings.HasPrefix(k, "Content-") {
+			l = l.With(slog.String("http.response.header."+k, resp.Header.Get(k)))
+		}
+	}
+
+	l.Info("requested")
 
 	for k, vv := range resp.Header {
 		w.Header()[k] = vv
@@ -84,24 +105,31 @@ func (p *Proxy) replyFrom(w http.ResponseWriter, r *http.Request) {
 	// force no-cache
 	w.Header().Set("Cache-Control", "no-cache")
 
-	if r.Method == http.MethodGet && resp.StatusCode != http.StatusPartialContent && resp.ContentLength > MaxResponseContentLength {
-		w.Header().Set("Content-Range", (&Range{
-			Start:  0,
-			Length: MaxResponseContentLength,
-		}).ContentRange(resp.ContentLength))
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", MaxResponseContentLength))
-		w.WriteHeader(http.StatusPartialContent)
+	// force partial-content
+	if r.Method == http.MethodGet {
+		if resp.ContentLength > MaxResponseContentLength {
+			if rng == nil {
+				rng = &Range{Start: 0}
+			}
+			rng.Length = MaxResponseContentLength
 
-		if _, err := io.Copy(w, io.LimitReader(resp.Body, MaxResponseContentLength)); err != nil {
-			fmt.Println(err)
+			w.Header().Set("Content-Range", rng.ContentRange(cmp.Or(ContentRangeTotal(resp.Header.Get("Content-Range")), resp.ContentLength)))
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", rng.Length))
+
+			w.WriteHeader(http.StatusPartialContent)
+
+			if _, err := io.Copy(w, io.LimitReader(resp.Body, MaxResponseContentLength)); err != nil {
+				l.Error(err.Error())
+			}
 		}
 		return
 	}
 
 	w.WriteHeader(resp.StatusCode)
+
 	if resp.StatusCode != http.StatusNoContent {
 		if _, err := io.Copy(w, resp.Body); err != nil {
-			fmt.Println(err)
+			l.Error(err.Error())
 		}
 	}
 }

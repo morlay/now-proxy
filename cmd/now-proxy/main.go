@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/morlay/now-proxy/pkg/proxy"
-	"github.com/morlay/now-proxy/pkg/version"
+	"github.com/morlay/now-proxy/cmd/now-proxy/internal/version"
+	"log/slog"
 	"net/http"
 	"os"
+
+	"github.com/morlay/now-proxy/pkg/proxy"
 )
 
 func main() {
@@ -14,9 +16,16 @@ func main() {
 		port = "8888"
 	}
 
-	fmt.Println(fmt.Sprintf("serve on 0.0.0.0:%s (%v)", port, version.FullVersion()))
+	addr := fmt.Sprintf("0.0.0.0:%s", port)
 
-	err := http.ListenAndServe(fmt.Sprintf("0.0.0.0:%s", port), &proxy.Proxy{})
+	slog.Default().
+		With(
+			slog.String("service.version", version.FullVersion()),
+			slog.String("listen.addr", addr),
+		).
+		Info(fmt.Sprintf("serving"))
+
+	err := http.ListenAndServe(addr, &proxy.Proxy{})
 	if err != nil {
 		panic(err)
 	}

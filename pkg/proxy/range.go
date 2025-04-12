@@ -8,6 +8,17 @@ import (
 	"strings"
 )
 
+func ContentRangeTotal(contentRange string) int64 {
+	if contentRange != "" {
+		parts := strings.Split(contentRange, "/")
+		if len(parts) == 2 {
+			v, _ := strconv.ParseInt(parts[1], 10, 64)
+			return v
+		}
+	}
+	return 0
+}
+
 type Range struct {
 	Start  int64
 	Length int64
@@ -18,6 +29,9 @@ func (r Range) ContentRange(total int64) string {
 }
 
 func (r Range) RangeString() string {
+	if r.Length == 0 {
+		return fmt.Sprintf("bytes=%d-", r.Start)
+	}
 	return fmt.Sprintf("bytes=%d-%d", r.Start, r.Start+r.Length-1)
 }
 

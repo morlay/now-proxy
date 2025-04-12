@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 )
 
@@ -18,9 +19,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (Proxy) writeErr(w http.ResponseWriter, status int, err error) {
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(&Err{Msg: err.Error()})
+
+	if err := json.NewEncoder(w).Encode(&Err{Msg: err.Error()}); err != nil {
+		slog.Default().Error(err.Error())
+	}
 }
 
 type Err struct {
-	Msg string
+	Msg string `json:"msg"`
 }
